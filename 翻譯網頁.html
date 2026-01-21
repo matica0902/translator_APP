@@ -139,18 +139,30 @@
         const inputBox = document.getElementById('inputBox');
         const resultBox = document.getElementById('resultBox');
         const detectedLangStatus = document.getElementById('detectedLang');
+        const errorMessage = document.getElementById('errorMessage');
 
         let recognition;
         let isRecording = false;
         let finalTranscript = '';
-        let detectedLang = 'zh-TW'; // 預設
+        let detectedLang = 'zh-TW';
+        let isSpeechUnlocked = false;
+
+        // 解鎖語音引擎
+        function unlockSpeech() {
+            if (isSpeechUnlocked) return;
+            const synth = window.speechSynthesis;
+            const utterance = new SpeechSynthesisUtterance("");
+            utterance.volume = 0;
+            synth.speak(utterance);
+            isSpeechUnlocked = true;
+        }
 
         // 初始化語音辨識
         if ('webkitSpeechRecognition' in window) {
             recognition = new webkitSpeechRecognition();
             recognition.continuous = true;
-            recognition.interimResults = true; // 開啟逐字顯示
-            recognition.lang = 'zh-TW'; // 設定為自動識別模式的基礎（或根據需求切換）
+            recognition.interimResults = true;
+            recognition.lang = 'zh-TW';
 
             recognition.onresult = (event) => {
                 let interimTranscript = '';
@@ -161,40 +173,26 @@
                         interimTranscript += event.results[i][0].transcript;
                     }
                 }
-
-                const currentText = finalTranscript + interimTranscript;
-                updateInput(currentText);
+                updateInput(finalTranscript + interimTranscript);
             };
 
             recognition.onerror = (event) => {
-                console.error("辨識錯誤:", event.error);
-                let msg = "";
-                if (event.error === 'not-allowed') {
-                    msg = "❌ 錯誤：瀏覽器拒絕使用麥克風。請確認已開啟權限，且必須使用 HTTPS 連線或 localhost 測試。";
-                } else if (event.error === 'network') {
-                    msg = "❌ 網路錯誤：語音辨識服務連線失敗。";
-                } else {
-                    msg = "❌ 辨識出錯：" + event.error;
-                }
+                let msg = "❌ 辨識出錯：" + event.error;
+                if (event.error === 'not-allowed') msg = "❌ 錯誤：請確認已開啟麥克風權限。";
                 showError(msg);
                 stopRecording();
             };
         } else {
-            showError("❌ 您的瀏覽器不支援 Web Speech API。請使用最新版 Chrome, Edge 或 iOS Safari (需 HTTPS)。");
+            showError("❌ 您的瀏覽器不支援語音辨識。");
         }
 
         function showError(msg) {
-            const errDiv = document.getElementById('errorMessage');
-            errDiv.innerText = msg;
-            errDiv.style.display = 'block';
+            errorMessage.innerText = msg;
+            errorMessage.style.display = 'block';
         }
 
         function updateInput(text, source = 'recognition') {
-            if (source === 'recognition') {
-                inputBox.innerText = text;
-            }
-
-            // 自動判定語系 (簡單邏輯：包含中文則判定為中文)
+            if (source === 'recognition') inputBox.innerText = text;
             if (/[\u4E00-\u9FA5]/.test(text)) {
                 detectedLang = 'zh-TW';
                 detectedLangStatus.innerText = "偵測語系：中文 -> 翻英文";
@@ -205,17 +203,8 @@
             if (text.trim().length > 0) translateBtn.disabled = false;
         }
 
-        // 監聽手動編輯 (修復倒序問題：不要在輸入時重新設定 innerText)
-        inputBox.addEventListener('input', (e) => {
-            updateInput(inputBox.innerText, 'manual');
-        });
-
-        // 點擊清除預設文字
-        inputBox.addEventListener('focus', () => {
-            if (inputBox.innerText.includes("點擊下方按鈕")) {
-                inputBox.innerText = "";
-            }
-        });
+        inputBox.addEventListener('input', () => updateInput(inputBox.innerText, 'manual'));
+        inputBox.addEventListener('focus', () => { if (inputBox.innerText.includes("點擊下")) inputBox.innerText = ""; });
 
         function stopRecording() {
             recognition.stop();
@@ -225,6 +214,7 @@
         }
 
         startBtn.addEventListener('click', () => {
+            unlockSpeech();
             if (isRecording) {
                 stopRecording();
             } else {
@@ -237,7 +227,6 @@
             }
         });
 
-        // 翻譯功能 (這裡使用免費的 MyMemory API 作為範例，實際開發建議用 Google/OpenAI API)
         async function translateText(text, fromLang) {
             const targetLang = fromLang === 'zh-TW' ? 'en' : 'zh';
             const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${fromLang}|${targetLang}`);
@@ -245,49 +234,31 @@
             return data.responseData.translatedText;
         }
 
-        // 播放語音
         function speak(text, lang) {
             if (!text) return;
             const synth = window.speechSynthesis;
-
-            // 停止之前正在說的話，避免重疊
             synth.cancel();
-
             const utterance = new SpeechSynthesisUtterance(text);
-
-            // 決定說什麼語言
-            // 如果偵測到的是中文，翻譯後就是英文，所以要說英文
-            if (lang === 'zh-TW') {
-                utterance.lang = 'en-US';
-                utterance.rate = 1.0;
-            } else {
-                utterance.lang = 'zh-TW';
-                utterance.rate = 1.0;
-            }
-
+            utterance.lang = (lang === 'zh-TW' ? 'en-US' : 'zh-TW');
+            utterance.rate = 1.0;
             synth.speak(utterance);
         }
 
         translateBtn.addEventListener('click', async () => {
+            unlockSpeech();
             const textToTranslate = inputBox.innerText;
-            if (!textToTranslate || textToTranslate.includes("點擊下方按鈕")) return;
-
+            if (!textToTranslate || textToTranslate.includes("點擊下")) return;
             resultBox.innerText = "翻譯中...";
-            errorMessage.style.display = 'none'; // 清除錯誤
-
+            errorMessage.style.display = 'none';
             try {
                 const translatedText = await translateText(textToTranslate, detectedLang);
                 if (translatedText) {
                     resultBox.innerText = translatedText;
-                    // 說出翻譯後的結果
                     speak(translatedText, detectedLang);
-                } else {
-                    throw new Error("API 未傳回結果");
                 }
             } catch (error) {
-                console.error("翻譯出錯:", error);
                 resultBox.innerText = "翻譯失敗";
-                showError("❌ 翻譯失敗，可能是 API 達到今日上限或網路問題。");
+                showError("❌ 翻譯出錯，請檢查網路。");
             }
         });
     </script>
