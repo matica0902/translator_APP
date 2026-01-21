@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>即時雙語翻譯助手</title>
+    <!-- iOS PWA 支援 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="翻譯助手">
+    <link rel="apple-touch-icon" href="icon.png">
+    <!-- Web App Manifest -->
+    <link rel="manifest" href="manifest.json">
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            background: #f4f4f9;
+        }
+
+        #container {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            width: 90%;
+            max-width: 500px;
+        }
+
+        .box {
+            border: 1px solid #ddd;
+            padding: 15px;
+            min-height: 80px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            font-size: 1.1em;
+            line-height: 1.5;
+        }
+
+        .label {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #555;
+        }
+
+        #inputBox {
+            background: #fff;
+            color: #333;
+        }
+
+        #resultBox {
+            background: #eef7ff;
+            color: #004a99;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            padding: 12px 20px;
+            font-size: 1em;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        #startBtn {
+            background: #4CAF50;
+            color: white;
+            flex: 1;
+        }
+
+        #startBtn.recording {
+            background: #f44336;
+        }
+
+        #translateBtn {
+            background: #2196F3;
+            color: white;
+            flex: 1;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .status {
+            font-size: 0.9em;
+            color: #888;
+            margin-top: 5px;
+        }
+
+        #errorMessage {
+            color: #f44336;
+            font-size: 0.85em;
+            margin-top: 10px;
+            display: none;
+            background: #ffebee;
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        #inputBox:focus {
+            outline: 2px solid #2196F3;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="container">
+        <h2>即時雙語翻譯助手</h2>
+
+        <div class="label">正在輸入 (即時偵測 / 可手動修改)：</div>
+        <div id="inputBox" class="box" contenteditable="true">點擊下方按鈕開始說話，或直接在此輸入文字...</div>
+        <div id="detectedLang" class="status">偵測語系：等待中</div>
+        <div id="errorMessage"></div>
+
+        <div class="label">翻譯結果：</div>
+        <div id="resultBox" class="box">翻譯結果將顯示在此...</div>
+
+        <div class="controls">
+            <button id="startBtn">開始收音</button>
+            <button id="translateBtn" disabled>翻譯並朗讀</button>
+        </div>
+    </div>
+
+    <script>
+        const startBtn = document.getElementById('startBtn');
+        const translateBtn = document.getElementById('translateBtn');
+        const inputBox = document.getElementById('inputBox');
+        const resultBox = document.getElementById('resultBox');
+        const detectedLangStatus = document.getElementById('detectedLang');
+
+        let recognition;
+        let isRecording = false;
+        let finalTranscript = '';
+        let detectedLang = 'zh-TW'; // 預設
+
+        // 初始化語音辨識
+        if ('webkitSpeechRecognition' in window) {
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true; // 開啟逐字顯示
+            recognition.lang = 'zh-TW'; // 設定為自動識別模式的基礎（或根據需求切換）
+
+            recognition.onresult = (event) => {
+                let interimTranscript = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript;
+                    } else {
+                        interimTranscript += event.results[i][0].transcript;
+                    }
+                }
+
+                const currentText = finalTranscript + interimTranscript;
+                updateInput(currentText);
+            };
+
+            recognition.onerror = (event) => {
+                console.error("辨識錯誤:", event.error);
+                let msg = "";
+                if (event.error === 'not-allowed') {
+                    msg = "❌ 錯誤：瀏覽器拒絕使用麥克風。請確認已開啟權限，且必須使用 HTTPS 連線或 localhost 測試。";
+                } else if (event.error === 'network') {
+                    msg = "❌ 網路錯誤：語音辨識服務連線失敗。";
+                } else {
+                    msg = "❌ 辨識出錯：" + event.error;
+                }
+                showError(msg);
+                stopRecording();
+            };
+        } else {
+            showError("❌ 您的瀏覽器不支援 Web Speech API。請使用最新版 Chrome, Edge 或 iOS Safari (需 HTTPS)。");
+        }
+
+        function showError(msg) {
+            const errDiv = document.getElementById('errorMessage');
+            errDiv.innerText = msg;
+            errDiv.style.display = 'block';
+        }
+
+        function updateInput(text, source = 'recognition') {
+            if (source === 'recognition') {
+                inputBox.innerText = text;
+            }
+
+            // 自動判定語系 (簡單邏輯：包含中文則判定為中文)
+            if (/[\u4E00-\u9FA5]/.test(text)) {
+                detectedLang = 'zh-TW';
+                detectedLangStatus.innerText = "偵測語系：中文 -> 翻英文";
+            } else if (/[a-zA-Z]/.test(text)) {
+                detectedLang = 'en-US';
+                detectedLangStatus.innerText = "偵測語系：英文 -> 翻中文";
+            }
+            if (text.trim().length > 0) translateBtn.disabled = false;
+        }
+
+        // 監聽手動編輯 (修復倒序問題：不要在輸入時重新設定 innerText)
+        inputBox.addEventListener('input', (e) => {
+            updateInput(inputBox.innerText, 'manual');
+        });
+
+        // 點擊清除預設文字
+        inputBox.addEventListener('focus', () => {
+            if (inputBox.innerText.includes("點擊下方按鈕")) {
+                inputBox.innerText = "";
+            }
+        });
+
+        function stopRecording() {
+            recognition.stop();
+            isRecording = false;
+            startBtn.innerText = "開始收音";
+            startBtn.classList.remove('recording');
+        }
+
+        startBtn.addEventListener('click', () => {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                finalTranscript = '';
+                inputBox.innerText = "";
+                recognition.start();
+                isRecording = true;
+                startBtn.innerText = "停止收音";
+                startBtn.classList.add('recording');
+            }
+        });
+
+        // 翻譯功能 (這裡使用免費的 MyMemory API 作為範例，實際開發建議用 Google/OpenAI API)
+        async function translateText(text, fromLang) {
+            const targetLang = fromLang === 'zh-TW' ? 'en' : 'zh';
+            const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${fromLang}|${targetLang}`);
+            const data = await res.json();
+            return data.responseData.translatedText;
+        }
+
+        // 播放語音
+        function speak(text, lang) {
+            const synth = window.speechSynthesis;
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = lang === 'zh-TW' ? 'en-US' : 'zh-TW'; // 說出翻譯後的語言
+            synth.speak(utterance);
+        }
+
+        translateBtn.addEventListener('click', async () => {
+            const textToTranslate = inputBox.innerText;
+            if (!textToTranslate) return;
+
+            resultBox.innerText = "翻譯中...";
+
+            try {
+                const translatedText = await translateText(textToTranslate, detectedLang);
+                resultBox.innerText = translatedText;
+
+                // 說出翻譯後的結果
+                speak(translatedText, detectedLang);
+            } catch (error) {
+                resultBox.innerText = "翻譯失敗，請檢查網路。";
+            }
+        });
+    </script>
+</body>
+
+</html>
