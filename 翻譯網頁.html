@@ -247,26 +247,47 @@
 
         // 播放語音
         function speak(text, lang) {
+            if (!text) return;
             const synth = window.speechSynthesis;
+
+            // 停止之前正在說的話，避免重疊
+            synth.cancel();
+
             const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = lang === 'zh-TW' ? 'en-US' : 'zh-TW'; // 說出翻譯後的語言
+
+            // 決定說什麼語言
+            // 如果偵測到的是中文，翻譯後就是英文，所以要說英文
+            if (lang === 'zh-TW') {
+                utterance.lang = 'en-US';
+                utterance.rate = 1.0;
+            } else {
+                utterance.lang = 'zh-TW';
+                utterance.rate = 1.0;
+            }
+
             synth.speak(utterance);
         }
 
         translateBtn.addEventListener('click', async () => {
             const textToTranslate = inputBox.innerText;
-            if (!textToTranslate) return;
+            if (!textToTranslate || textToTranslate.includes("點擊下方按鈕")) return;
 
             resultBox.innerText = "翻譯中...";
+            errorMessage.style.display = 'none'; // 清除錯誤
 
             try {
                 const translatedText = await translateText(textToTranslate, detectedLang);
-                resultBox.innerText = translatedText;
-
-                // 說出翻譯後的結果
-                speak(translatedText, detectedLang);
+                if (translatedText) {
+                    resultBox.innerText = translatedText;
+                    // 說出翻譯後的結果
+                    speak(translatedText, detectedLang);
+                } else {
+                    throw new Error("API 未傳回結果");
+                }
             } catch (error) {
-                resultBox.innerText = "翻譯失敗，請檢查網路。";
+                console.error("翻譯出錯:", error);
+                resultBox.innerText = "翻譯失敗";
+                showError("❌ 翻譯失敗，可能是 API 達到今日上限或網路問題。");
             }
         });
     </script>
