@@ -131,6 +131,8 @@
             <button id="startBtn">開始收音</button>
             <button id="translateBtn" disabled>翻譯並朗讀</button>
         </div>
+        <button id="testSoundBtn" style="margin-top: 15px; width: 100%; background: #9c27b0; color: white;">🔊 測試聲音
+            (手機沒聲音請按此)</button>
     </div>
 
     <script>
@@ -260,6 +262,13 @@
                 resultBox.innerText = "翻譯失敗";
                 showError("❌ 翻譯出錯，請檢查網路。");
             }
+        });
+
+        // 聲音測試按鈕
+        document.getElementById('testSoundBtn').addEventListener('click', () => {
+            unlockSpeech();
+            speak("測試音量正常", 'en-US');
+            alert("正在嘗試發音... 若仍無聲，請確認手機側邊開關（靜音鍵）已關閉，且音量已調大。");
         });
     </script>
 </body>
